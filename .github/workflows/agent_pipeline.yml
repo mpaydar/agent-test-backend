@@ -1,0 +1,44 @@
+name: Agent Pipeline
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to Azure VM
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.AZURE_VM_HOST }}
+          username: ${{ secrets.AZURE_VM_USER }}
+          key: ${{ secrets.AZURE_VM_SSH_KEY }}
+          port: ${{ secrets.AZURE_VM_PORT || 22 }}
+          envs: API_KEY
+          script: |
+            set -e
+            REPO_DIR="$HOME/agent-test-backend"
+
+            if [ -d "$REPO_DIR/.git" ]; then
+              cd "$REPO_DIR"
+              git fetch origin main
+              git reset --hard origin/main
+            else
+              git clone https://github.com/mpaydar/agent-test-backend.git "$REPO_DIR"
+              cd "$REPO_DIR"
+            fi
+
+            docker build -t agent-test-backend backend/
+
+            docker stop agent-test-backend || true
+            docker rm agent-test-backend || true
+
+            docker run -d \
+              --name agent-test-backend \
+              --restart unless-stopped \
+              -p 8000:8000 \
+              -e API_KEY="$API_KEY" \
+              agent-test-backend
+        env:
+          API_KEY: ${{ secrets.API_KEY }}
